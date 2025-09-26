@@ -54,22 +54,25 @@ my_dataset = requests.get(activites_url, headers=header, params=param).json()
 detailed_activities = []
 
 for activity in my_dataset:
-    activity_id = activity['id']
-    detail_url = f"https://www.strava.com/api/v3/activities/{activity_id}"
-    detail = requests.get(detail_url, headers=header).json()
+    if isinstance(activity, dict) and 'id' in activity:
+        activity_id = activity['id']
+        detail_url = f"https://www.strava.com/api/v3/activities/{activity_id}"
+        detail = requests.get(detail_url, headers=header).json()
 
-    detailed_activities.append({
-        'name': detail.get('name'),
-        'description': detail.get('description', ''),
-        'private_note': detail.get('private_note', ''),
-        'type': detail.get('type'),
-        'distance': detail.get('distance'),
-        'moving_time': detail.get('moving_time'),
-        'average_speed': detail.get('average_speed'),
-        'max_speed': detail.get('max_speed'),
-        'total_elevation_gain': detail.get('total_elevation_gain'),
-        'start_date_local': detail.get('start_date_local')
-    })
+        detailed_activities.append({
+            'name': detail.get('name'),
+            'description': detail.get('description', ''),
+            'private_note': detail.get('private_note', ''),
+            'type': detail.get('type'),
+            'distance': detail.get('distance'),
+            'moving_time': detail.get('moving_time'),
+            'average_speed': detail.get('average_speed'),
+            'max_speed': detail.get('max_speed'),
+            'total_elevation_gain': detail.get('total_elevation_gain'),
+            'start_date_local': detail.get('start_date_local')
+        })
+    else:
+        st.warning(f"⚠️ Skipping malformed activity: {activity}")
 
 activities = pd.DataFrame(detailed_activities)
 
@@ -92,13 +95,13 @@ st.subheader("🔗 Merged Plan with Activities")
 st.dataframe(merged, use_container_width=True)
 
 # --- Weekly Mileage Chart Using 'Weeks_to_Go' ---
-# Confirm column names and types
 merged['Weeks_to_Go'] = pd.to_numeric(merged['Weeks_to_Go'], errors='coerce')
 
-# Only drop rows where mileage is missing or non-numeric
-valid_rows = merged[merged['Weeks_to_Go'].notnull() & merged['miles'].apply(lambda x: isinstance(x, (int, float)) and pd.notnull(x))]
+valid_rows = merged[
+    merged['Weeks_to_Go'].notnull() &
+    merged['miles'].apply(lambda x: isinstance(x, (int, float)) and pd.notnull(x))
+]
 
-# Group and sum mileage
 weekly_mileage = (
     valid_rows.groupby('Weeks_to_Go')['miles']
     .sum()
@@ -106,7 +109,6 @@ weekly_mileage = (
     .sort_values('Weeks_to_Go', ascending=False)
 )
 
-# Plot
 if not weekly_mileage.empty:
     st.subheader("📊 Mileage by Weeks to Go (Descending)")
     st.bar_chart(weekly_mileage.set_index('Weeks_to_Go')['miles'])
