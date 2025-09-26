@@ -50,6 +50,10 @@ param = {
 }
 my_dataset = requests.get(activites_url, headers=header, params=param).json()
 
+if isinstance(my_dataset, dict) and 'message' in my_dataset:
+    st.error(f"❌ Strava API error: {my_dataset['message']}")
+    st.stop()
+
 # --- Detailed Activity Pull ---
 detailed_activities = []
 
@@ -114,3 +118,4 @@ if not weekly_mileage.empty:
     st.bar_chart(weekly_mileage.set_index('Weeks_to_Go')['miles'])
 else:
     st.warning("No valid mileage data found for charting.")
+
