@@ -18,15 +18,20 @@ url = st.secrets["private_gsheets_url"]
 sheet_name = "Plan"
 worksheet = client.open_by_url(url).worksheet(sheet_name)
 
-plan = worksheet.get_all_records()
+try:
+    plan = worksheet.get_all_records()
+except Exception as e:
+    st.error(f"❌ Failed to load Google Sheet: {e}")
+    st.stop()
+
 df_plan = pd.DataFrame(plan)
-df_plan.columns = df_plan.columns.str.strip()  # normalize column names
+df_plan.columns = df_plan.columns.str.strip()
 st.subheader("📋 Training Plan")
 st.dataframe(df_plan, use_container_width=True)
 
 # --- Strava API Setup ---
 auth_url = "https://www.strava.com/oauth/token"
-activites_url = "https://www.strava.com/api/v3/athlete/activities"
+activities_url = "https://www.strava.com/api/v3/athlete/activities"
 
 payload = {
     'client_id': "164663",
@@ -37,48 +42,62 @@ payload = {
 }
 
 res = requests.post(auth_url, data=payload, verify=False)
-access_token = res.json()['access_token']
+access_token = res.json().get('access_token')
 
-# Convert September 1, 2025 to Unix timestamp
-after_timestamp = int(time.mktime(datetime(2025, 9, 1).timetuple()))
-
-header = {'Authorization': 'Bearer ' + access_token}
-param = {
-    'per_page': 200,
-    'page': 1,
-    'after': after_timestamp
-}
-my_dataset = requests.get(activites_url, headers=header, params=param).json()
-
-if isinstance(my_dataset, dict) and 'message' in my_dataset:
-    st.error(f"❌ Strava API error: {my_dataset['message']}")
+if not access_token:
+    st.error("❌ Failed to retrieve Strava access token.")
     st.stop()
 
-# --- Detailed Activity Pull ---
-detailed_activities = []
+# --- Activity Fetch with Caching ---
+if "detailed_activities" not in st.session_state:
+    after_timestamp = int(time.mktime(datetime(2025, 9, 1).timetuple()))
+    header = {'Authorization': f'Bearer {access_token}'}
+    param = {
+        'per_page': 50,
+        'page': 1,
+        'after': after_timestamp
+    }
 
-for activity in my_dataset:
-    if isinstance(activity, dict) and 'id' in activity:
-        activity_id = activity['id']
-        detail_url = f"https://www.strava.com/api/v3/activities/{activity_id}"
-        detail = requests.get(detail_url, headers=header).json()
+    raw_response = requests.get(activities_url, headers=header, params=param).json()
 
-        detailed_activities.append({
-            'name': detail.get('name'),
-            'description': detail.get('description', ''),
-            'private_note': detail.get('private_note', ''),
-            'type': detail.get('type'),
-            'distance': detail.get('distance'),
-            'moving_time': detail.get('moving_time'),
-            'average_speed': detail.get('average_speed'),
-            'max_speed': detail.get('max_speed'),
-            'total_elevation_gain': detail.get('total_elevation_gain'),
-            'start_date_local': detail.get('start_date_local')
-        })
-    else:
-        st.warning(f"⚠️ Skipping malformed activity: {activity}")
+    if isinstance(raw_response, dict) and 'message' in raw_response:
+        st.error(f"❌ Strava API error: {raw_response['message']}")
+        st.stop()
+
+    detailed_activities = []
+
+    for activity in raw_response:
+        if isinstance(activity, dict) and 'id' in activity:
+            activity_id = activity['id']
+            detail_url = f"https://www.strava.com/api/v3/activities/{activity_id}"
+            detail = requests.get(detail_url, headers=header).json()
+
+            detailed_activities.append({
+                'name': detail.get('name'),
+                'description': detail.get('description', ''),
+                'private_note': detail.get('private_note', ''),
+                'type': detail.get('type'),
+                'distance': detail.get('distance'),
+                'moving_time': detail.get('moving_time'),
+                'average_speed': detail.get('average_speed'),
+                'max_speed': detail.get('max_speed'),
+                'total_elevation_gain': detail.get('total_elevation_gain'),
+                'start_date_local': detail.get('start_date_local')
+            })
+
+            time.sleep(0.5)  # throttle to avoid rate limit
+        else:
+            st.warning(f"⚠️ Skipping malformed activity: {activity}")
+
+    st.session_state.detailed_activities = detailed_activities
+else:
+    detailed_activities = st.session_state.detailed_activities
 
 activities = pd.DataFrame(detailed_activities)
+
+if activities.empty:
+    st.error("❌ No valid Strava activities found.")
+    st.stop()
 
 # --- Enrich Activity Data ---
 activities['start_date_local'] = pd.to_datetime(activities['start_date_local'])
@@ -98,9 +117,8 @@ merged = pd.merge(df_plan, activities, left_on='ID', right_on='description', how
 st.subheader("🔗 Merged Plan with Activities")
 st.dataframe(merged, use_container_width=True)
 
-# --- Weekly Mileage Chart Using 'Weeks_to_Go' ---
+# --- Weekly Mileage Chart ---
 merged['Weeks_to_Go'] = pd.to_numeric(merged['Weeks_to_Go'], errors='coerce')
-
 valid_rows = merged[
     merged['Weeks_to_Go'].notnull() &
     merged['miles'].apply(lambda x: isinstance(x, (int, float)) and pd.notnull(x))
@@ -118,4 +136,3 @@ if not weekly_mileage.empty:
     st.bar_chart(weekly_mileage.set_index('Weeks_to_Go')['miles'])
 else:
     st.warning("No valid mileage data found for charting.")
-
