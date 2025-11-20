@@ -251,6 +251,8 @@ def update_strava_sheet():
     res = requests.post(auth_url, data=payload, verify=False)
     if res.status_code != 200:
         st.error("❌ Failed to authenticate with Strava.")
+        st.text(f"Status code: {res.status_code}")
+        st.text(f"Response: {res.text}")
         return
 
     access_token = res.json().get('access_token')
