@@ -175,17 +175,16 @@ st.plotly_chart(fig, use_container_width=True)
 
 
 # Ensure ID is numeric for proper sorting
-activities['ID'] = pd.to_numeric(activities['ID'], errors='coerce')
-
+merged['ID'] = pd.to_numeric(merged['ID'], errors='coerce')
 # Sort by ID descending
-activities_sorted = activities.sort_values('ID', ascending=False)
+merged_sorted = merged.sort_values('ID', ascending=False)
 
 # Build dropdown options
-run_options = activities_sorted['start_date_local'].dt.strftime('%Y-%m-%d %H:%M') + " | " + activities_sorted['name'].astype(str)
+run_options = merged_sorted['start_date_local'].dt.strftime('%Y-%m-%d %H:%M') + " | " + merged_sorted['name'].astype(str)
 selected = st.selectbox("📅 Select a run to plot:", run_options)
 
 row_index = run_options[run_options == selected].index[0]
-polyline_str = activities.loc[row_index, 'polyline']
+polyline_str = merged.loc[row_index, 'polyline']
 
 # --- Decode polyline ---
 try:
