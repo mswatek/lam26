@@ -1,14 +1,18 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime
+import time
 import gspread
+import requests
+import json
 from google.oauth2.service_account import Credentials
 import urllib3
 import polyline
 import folium
-import json
-from shapely.geometry import LineString
+import plotly.express as px
+from shapely.geometry import LineString, mapping
 import streamlit.components.v1 as components
+
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -87,8 +91,6 @@ weekly_mileage = (
     .reset_index()
     .sort_values('Weeks_to_Go', ascending=False)
 )
-
-import plotly.express as px
 
 # Sort descending so higher weeks are on the left
 df = weekly_mileage.sort_values('Weeks_to_Go', ascending=False)
@@ -217,3 +219,116 @@ folium.Marker(end, popup="End", icon=folium.Icon(color='red')).add_to(m)
 # --- Display map in Streamlit ---
 st.subheader("📍 Route Map")
 components.html(m._repr_html_(), height=500)
+
+
+############# UPDATE GOOGLE SHEET USING STRAVA API #############
+
+def update_strava_sheet():
+    st.info("🔄 Fetching Strava activities and updating Google Sheet...")
+
+    # --- Disable SSL Warnings ---
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+    # --- Google Sheets Setup ---
+    scopes = ["https://www.googleapis.com/auth/spreadsheets"]
+    skey = st.secrets["gcp_service_account"]
+    credentials = Credentials.from_service_account_info(skey, scopes=scopes)
+    client = gspread.authorize(credentials)
+    url = st.secrets["private_gsheets_url"]
+    worksheet = client.open_by_url(url).worksheet("Runs")
+
+    # --- Strava API Setup ---
+    auth_url = "https://www.strava.com/oauth/token"
+    activities_url = "https://www.strava.com/api/v3/athlete/activities"
+
+    payload = {
+        'client_id': st.secrets["strava_client_id"],
+        'client_secret': st.secrets["strava_client_secret"],
+        'refresh_token': st.secrets["strava_refresh_token"],
+        'grant_type': "refresh_token"
+    }
+
+    res = requests.post(auth_url, data=payload, verify=False)
+    if res.status_code != 200:
+        st.error("❌ Failed to authenticate with Strava.")
+        return
+
+    access_token = res.json().get('access_token')
+    if not access_token:
+        st.error("❌ No access token received from Strava.")
+        return
+
+    # --- Fetch Activities ---
+    after_timestamp = int(time.mktime(datetime(2025, 9, 1).timetuple()))
+    header = {'Authorization': f'Bearer {access_token}'}
+    param = {'per_page': 50, 'page': 1, 'after': after_timestamp}
+
+    raw_response = requests.get(activities_url, headers=header, params=param).json()
+    detailed_activities = []
+
+    for activity in raw_response:
+        if isinstance(activity, dict) and 'id' in activity:
+            activity_id = activity['id']
+            detail_url = f"https://www.strava.com/api/v3/activities/{activity_id}"
+            detail = requests.get(detail_url, headers=header).json()
+
+            detailed_activities.append({
+                'name': detail.get('name'),
+                'description': detail.get('description', ''),
+                'private_note': detail.get('private_note', ''),
+                'type': detail.get('type'),
+                'distance': detail.get('distance'),
+                'moving_time': detail.get('moving_time'),
+                'average_speed': detail.get('average_speed'),
+                'max_speed': detail.get('max_speed'),
+                'total_elevation_gain': detail.get('total_elevation_gain'),
+                'start_date_local': detail.get('start_date_local'),
+                'map': detail.get('map') if 'map' in detail else None
+            })
+
+            time.sleep(0.5)  # throttle to avoid rate limit
+
+    # --- Convert to DataFrame ---
+    activities = pd.DataFrame(detailed_activities)
+
+    def polyline_to_geojson(summary_polyline):
+        try:
+            coords = polyline.decode(summary_polyline)
+            line = LineString(coords)
+            return json.dumps(mapping(line))  # GeoJSON LineString
+        except Exception:
+            return None
+
+    activities['polyline'] = activities['map'].apply(
+        lambda m: m.get('polyline') if isinstance(m, dict) and m.get('polyline') else None
+    )
+    activities['geojson'] = activities['polyline'].apply(polyline_to_geojson)
+
+    activities['start_date_local'] = pd.to_datetime(activities['start_date_local'])
+    activities['miles'] = activities['distance'] / 1609.34
+    activities['avg_mile_time_sec'] = 1609.34 / activities['average_speed']
+
+    def format_pace(x):
+        try:
+            if pd.isna(x) or not isinstance(x, (int, float)) or x <= 0:
+                return None
+            minutes = int(x // 60)
+            seconds = int(x % 60)
+            return f"{minutes}:{seconds:02d}"
+        except Exception:
+            return None
+
+    activities['avg_mile_time'] = activities['avg_mile_time_sec'].apply(format_pace)
+
+    # --- Upload to Google Sheet ---
+    worksheet.clear()
+    activities = activities.astype(str)
+    worksheet.update([activities.columns.values.tolist()] + activities.values.tolist())
+
+    st.success("✅ Strava activities uploaded to Google Sheet.")
+
+if st.button("🔄 Update Strava Activities"):
+    try:
+        update_strava_sheet()
+    except Exception as e:
+        st.error(f"❌ Update failed: {e}")
