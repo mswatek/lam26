@@ -4,6 +4,11 @@ from datetime import datetime
 import gspread
 from google.oauth2.service_account import Credentials
 import urllib3
+import polyline
+import folium
+import json
+from shapely.geometry import LineString
+import streamlit.components.v1 as components
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -169,19 +174,13 @@ fig.update_layout(
 st.plotly_chart(fig, use_container_width=True)
 
 
+# Ensure ID is numeric for proper sorting
+activities['ID'] = pd.to_numeric(activities['ID'], errors='coerce')
 
-import streamlit as st
-import polyline
-import folium
-import json
-from shapely.geometry import LineString
-import streamlit.components.v1 as components
+# Sort by ID descending
+activities_sorted = activities.sort_values('ID', ascending=False)
 
-# --- Ensure datetime format ---
-activities['start_date_local'] = pd.to_datetime(activities['start_date_local'], errors='coerce')
-
-# --- Dropdown sorted by date ---
-activities_sorted = activities.sort_values('start_date_local', ascending=False)
+# Build dropdown options
 run_options = activities_sorted['start_date_local'].dt.strftime('%Y-%m-%d %H:%M') + " | " + activities_sorted['name'].astype(str)
 selected = st.selectbox("📅 Select a run to plot:", run_options)
 
