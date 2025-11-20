@@ -174,17 +174,23 @@ fig.update_layout(
 st.plotly_chart(fig, use_container_width=True)
 
 
-# Ensure ID is numeric for proper sorting
-merged['ID'] = pd.to_numeric(merged['ID'], errors='coerce')
-# Sort by ID descending
-merged_sorted = merged.sort_values('ID', ascending=False)
+# Ensure datetime format
+merged['start_date_local'] = pd.to_datetime(merged['start_date_local'], errors='coerce')
 
-# Build dropdown options
-run_options = merged_sorted['start_date_local'].dt.strftime('%Y-%m-%d %H:%M') + " | " + merged_sorted['name'].astype(str)
+# Sort by date descending
+merged_sorted = merged.sort_values('start_date_local', ascending=False)
+
+# Build dropdown options: show ID instead of name
+run_options = merged_sorted['start_date_local'].dt.strftime('%Y-%m-%d %H:%M') + " | ID " + merged_sorted['ID'].astype(str)
+
+# Display dropdown
 selected = st.selectbox("📅 Select a run to plot:", run_options)
 
+# Get the selected row index
 row_index = run_options[run_options == selected].index[0]
-polyline_str = merged.loc[row_index, 'polyline']
+
+# Extract polyline
+polyline_str = merged_sorted.loc[row_index, 'polyline']
 
 # --- Decode polyline ---
 try:
