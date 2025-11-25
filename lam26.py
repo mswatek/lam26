@@ -10,11 +10,15 @@ import urllib3
 import polyline
 import folium
 import plotly.express as px
+import numpy as np
 from shapely.geometry import LineString, mapping
 import streamlit.components.v1 as components
 
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+# --- App Title ---
+st.title("🏅 LA Marathon 2026 Tracker")
 
 # --- Google Sheets Setup ---
 scopes = ["https://www.googleapis.com/auth/spreadsheets"]
@@ -78,8 +82,7 @@ df_plan['ID'] = df_plan['ID'].astype(str)
 activities['description'] = activities['description'].astype(str)
 merged = pd.merge(df_plan, activities, left_on='ID', right_on='description', how='left')
 
-st.subheader("🔗 Merged Plan with Activities")
-st.dataframe(merged, use_container_width=True)
+
 
 # --- Weekly Mileage Chart ---
 merged['Weeks_to_Go'] = pd.to_numeric(merged['Weeks_to_Go'], errors='coerce')
@@ -104,79 +107,74 @@ fig = px.bar(
     y='miles',
     title='Weekly Mileage',
     labels={'Weeks_to_Go': 'Weeks to Go', 'miles': 'Miles'},
+    text='miles'
 )
 
-# Reverse x-axis
+fig.update_traces(texttemplate='%{text:.1f}', textposition='outside')  # format labels
 fig.update_layout(xaxis=dict(autorange='reversed'))
-
-st.plotly_chart(fig, use_container_width=True)
-
-
-# --- Filter for IDs ending in '.6' ---
-filtered = merged[merged['ID'].astype(str).str.endswith('.6')]
-
-# --- Ensure datetime format ---
-filtered['start_date_local'] = pd.to_datetime(filtered['start_date_local'], errors='coerce')
-
-# --- Sort by date ---
-filtered = filtered.sort_values('start_date_local')
-
-# --- Plotly bar chart ---
-fig = px.bar(
-    filtered,
-    x='start_date_local',
-    y='miles',
-    title='Miles Run by Date (Long Runs)',
-    labels={'start_date_local': 'Date', 'miles': 'Miles'},
-    hover_data=['name', 'ID']
-)
-
-fig.update_layout(xaxis_title='Date', yaxis_title='Miles', bargap=0.2)
-
-st.plotly_chart(fig, use_container_width=True)
-
-# --- Filter for IDs ending in '.3' ---
-filtered = merged[merged['ID'].astype(str).str.endswith('.3')]
-
-# --- Ensure datetime format ---
-filtered['start_date_local'] = pd.to_datetime(filtered['start_date_local'], errors='coerce')
-
-# --- Sort by date ---
-filtered = filtered.sort_values('start_date_local')
-
-import numpy as np
-
-# Filter valid pace values
-filtered = filtered[filtered['avg_mile_time_sec'].notnull()]
-filtered = filtered[filtered['start_date_local'].notnull()]
-
-# Create tick labels
-tickvals = np.arange(300, 480, 30)  # every 30 seconds from 5:00 to 8:00
-ticktext = [f"{int(t//60)}:{int(t%60):02d}" for t in tickvals]
-
-fig = px.bar(
-    filtered,
-    x='start_date_local',
-    y='avg_mile_time_sec',
-    title='Mile Pace by Date (Track Workouts)',
-    labels={'start_date_local': 'Date', 'avg_mile_time_sec': 'Mile Pace'},
-    hover_data=['name', 'ID', 'avg_mile_time']
-)
+st.plotly_chart(fig, width="stretch")
 
 
-fig.update_layout(
-    xaxis_title='Date',
-    yaxis_title='Mile Pace',
-    bargap=0.2,
-    yaxis=dict(
-        range=[300, 480],  # sets y-axis from 5:00 to 8:00 (in seconds)
-        tickmode='array',
-        tickvals=tickvals,
-        ticktext=ticktext
+
+# --- Tabs for Long Runs and Track Workouts ---
+tab1, tab2 = st.tabs(["🏃 Long Runs", "🏃‍♂️ Track Workouts"])
+
+with tab1:
+    # Long Runs chart
+    filtered_long = merged[merged['ID'].astype(str).str.endswith('.6')].copy()
+    filtered_long['start_date_local'] = pd.to_datetime(filtered_long['start_date_local'], errors='coerce')
+    filtered_long = filtered_long.sort_values('start_date_local')
+
+    fig_long = px.bar(
+        filtered_long,
+        x='start_date_local',
+        y='miles',
+        title='Miles Run by Date (Long Runs)',
+        labels={'start_date_local': 'Date', 'miles': 'Miles'},
+        hover_data=['name', 'ID'],
+        text='miles'
     )
-)
+    fig_long.update_traces(texttemplate='%{text:.1f}', textposition='outside')  # format labels
+    fig_long.update_layout(xaxis_title='Date', yaxis_title='Miles', bargap=0.2)
+    st.plotly_chart(fig_long, width="stretch")
 
-st.plotly_chart(fig, use_container_width=True)
+with tab2:
+    # Track Workouts chart
+    filtered_track = merged[merged['ID'].astype(str).str.endswith('.3')].copy()
+    filtered_track['start_date_local'] = pd.to_datetime(filtered_track['start_date_local'], errors='coerce')
+    filtered_track = filtered_track.sort_values('start_date_local')
+    filtered_track = filtered_track[filtered_track['avg_mile_time_sec'].notnull()]
+    filtered_track = filtered_track[filtered_track['start_date_local'].notnull()]
+
+    tickvals = np.arange(300, 480, 30)
+    ticktext = [f"{int(t//60)}:{int(t%60):02d}" for t in tickvals]
+
+    fig_track = px.bar(
+        filtered_track,
+        x='start_date_local',
+        y='avg_mile_time_sec',
+        title='Mile Pace by Date (Track Workouts)',
+        labels={'start_date_local': 'Date', 'avg_mile_time_sec': 'Mile Pace'},
+        hover_data=['name', 'ID', 'avg_mile_time'],
+        text='avg_mile_time'
+    )
+    fig_track.update_traces(textposition='outside')
+    fig_track.update_layout(
+        xaxis_title='Date',
+        yaxis_title='Mile Pace',
+        bargap=0.2,
+        yaxis=dict(range=[300, 480], tickmode='array', tickvals=tickvals, ticktext=ticktext)
+    )
+    st.plotly_chart(fig_track, width="stretch")
+
+
+# --- Table with plan and run data ---
+st.subheader("🔗 Full Training Table")
+st.dataframe(merged, width="stretch")
+
+
+# --- Route Map section ---
+st.subheader("📍 Route Map")
 
 
 # Ensure datetime format
@@ -279,6 +277,7 @@ def update_strava_sheet():
             detail_url = f"https://www.strava.com/api/v3/activities/{activity_id}"
             detail = requests.get(detail_url, headers=header).json()
 
+
             detailed_activities.append({
                 'name': detail.get('name'),
                 'description': detail.get('description', ''),
@@ -295,6 +294,7 @@ def update_strava_sheet():
             })
 
             time.sleep(0.5)  # throttle to avoid rate limit
+
 
     # --- Convert to DataFrame ---
     activities = pd.DataFrame(detailed_activities)
@@ -340,3 +340,6 @@ if st.button("🔄 Update Strava Activities"):
         update_strava_sheet()
     except Exception as e:
         st.error(f"❌ Update failed: {e}")
+
+
+
