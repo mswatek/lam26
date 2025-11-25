@@ -54,6 +54,9 @@ activities['start_date_local'] = pd.to_datetime(activities['start_date_local'], 
 activities['distance'] = pd.to_numeric(activities['distance'], errors='coerce')
 activities['average_speed'] = pd.to_numeric(activities['average_speed'], errors='coerce')
 
+# --- Heart Rate ---
+activities['average_heartrate'] = pd.to_numeric(activities['average_heartrate'], errors='coerce')
+
 activities['miles'] = activities['distance'] / 1609.34
 activities['avg_mile_time_sec'] = 1609.34 / activities['average_speed']
 
@@ -223,6 +226,8 @@ components.html(m._repr_html_(), height=500)
 
 ############# UPDATE GOOGLE SHEET USING STRAVA API #############
 
+st.divider()
+
 def update_strava_sheet():
     st.info("🔄 Fetching Strava activities and updating Google Sheet...")
 
@@ -285,7 +290,8 @@ def update_strava_sheet():
                 'max_speed': detail.get('max_speed'),
                 'total_elevation_gain': detail.get('total_elevation_gain'),
                 'start_date_local': detail.get('start_date_local'),
-                'map': detail.get('map') if 'map' in detail else None
+                'map': detail.get('map') if 'map' in detail else None,
+                'average_heartrate': detail.get('average_heartrate')
             })
 
             time.sleep(0.5)  # throttle to avoid rate limit
