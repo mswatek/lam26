@@ -140,7 +140,7 @@ with tab1:
 
 with tab2:
     # Track Workouts chart
-    filtered_track = merged[merged['ID'].astype(str).str.endswith('.3')].copy()
+    filtered_track = merged[merged['name'].astype(str).str.contains("Track", case=False, na=False)].copy()
     filtered_track['start_date_local'] = pd.to_datetime(filtered_track['start_date_local'], errors='coerce')
     filtered_track = filtered_track.sort_values('start_date_local')
     filtered_track = filtered_track[filtered_track['avg_mile_time_sec'].notnull()]
@@ -170,7 +170,25 @@ with tab2:
 
 # --- Table with plan and run data ---
 st.subheader("🔗 Full Training Table")
-st.dataframe(merged, width="stretch")
+
+# Select only the desired columns
+columns_to_show = [
+    "Weeks_to_Go",
+    "ID",
+    "Date",
+    "Day",
+    "Activity",
+    "Notes",
+    "miles",
+    "avg_mile_time",
+    "average_heartrate",
+    "private_note",
+]
+
+# Use .loc to avoid SettingWithCopy warnings
+merged_display = merged.loc[:, columns_to_show]
+
+st.dataframe(merged_display, width="stretch", hide_index=True)
 
 
 # --- Route Map section ---
@@ -340,6 +358,3 @@ if st.button("🔄 Update Strava Activities"):
         update_strava_sheet()
     except Exception as e:
         st.error(f"❌ Update failed: {e}")
-
-
-
