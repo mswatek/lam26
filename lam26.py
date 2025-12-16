@@ -284,34 +284,38 @@ def update_strava_sheet():
     # --- Fetch Activities ---
     after_timestamp = int(time.mktime(datetime(2025, 9, 1).timetuple()))
     header = {'Authorization': f'Bearer {access_token}'}
-    param = {'per_page': 50, 'page': 1, 'after': after_timestamp}
-
-    raw_response = requests.get(activities_url, headers=header, params=param).json()
     detailed_activities = []
+    page = 1
 
-    for activity in raw_response:
-        if isinstance(activity, dict) and 'id' in activity:
-            activity_id = activity['id']
-            detail_url = f"https://www.strava.com/api/v3/activities/{activity_id}"
-            detail = requests.get(detail_url, headers=header).json()
+    while True:
+        param = {'per_page': 50, 'page': page, 'after': after_timestamp}
+        raw_response = requests.get(activities_url, headers=header, params=param).json()
 
+        if not raw_response:  # stop when no more activities
+            break
 
-            detailed_activities.append({
-                'name': detail.get('name'),
-                'description': detail.get('description', ''),
-                'private_note': detail.get('private_note', ''),
-                'type': detail.get('type'),
-                'distance': detail.get('distance'),
-                'moving_time': detail.get('moving_time'),
-                'average_speed': detail.get('average_speed'),
-                'max_speed': detail.get('max_speed'),
-                'total_elevation_gain': detail.get('total_elevation_gain'),
-                'start_date_local': detail.get('start_date_local'),
-                'map': detail.get('map') if 'map' in detail else None,
-                'average_heartrate': detail.get('average_heartrate')
-            })
+        for activity in raw_response:
+            if isinstance(activity, dict) and 'id' in activity:
+                activity_id = activity['id']
+                detail_url = f"https://www.strava.com/api/v3/activities/{activity_id}"
+                detail = requests.get(detail_url, headers=header).json()
+                detailed_activities.append({
+                    'name': detail.get('name'),
+                    'description': detail.get('description', ''),
+                    'private_note': detail.get('private_note', ''),
+                    'type': detail.get('type'),
+                    'distance': detail.get('distance'),
+                    'moving_time': detail.get('moving_time'),
+                    'average_speed': detail.get('average_speed'),
+                    'max_speed': detail.get('max_speed'),
+                    'total_elevation_gain': detail.get('total_elevation_gain'),
+                    'start_date_local': detail.get('start_date_local'),
+                    'map': detail.get('map') if 'map' in detail else None,
+                    'average_heartrate': detail.get('average_heartrate')
+                })
+                time.sleep(0.5)
 
-            time.sleep(0.5)  # throttle to avoid rate limit
+        page += 1
 
 
     # --- Convert to DataFrame ---
@@ -358,3 +362,6 @@ if st.button("🔄 Update Strava Activities"):
         update_strava_sheet()
     except Exception as e:
         st.error(f"❌ Update failed: {e}")
+
+
+
